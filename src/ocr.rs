@@ -43,11 +43,9 @@ pub struct OcrConfig {
     pub max_concurrent_requests: usize,
     pub poll_interval_secs: u64,
     pub max_poll_attempts: u32,
-    // Rate limit retry config
     pub max_retries: u32,
     pub base_retry_delay_secs: u64,
     pub jitter_percent: u64,
-    // --- NEW: Structured extraction & page control ---
     pub page_schema: Option<String>,
     pub paginate: bool,
     pub page_range: Option<String>,
@@ -70,7 +68,6 @@ impl Default for OcrConfig {
             max_retries: 5,
             base_retry_delay_secs: 5,
             jitter_percent: 200,
-            // New fields default
             page_schema: None,
             paginate: false,
             page_range: None,
@@ -115,12 +112,7 @@ impl AsyncOcrProcessor {
         })
     }
 
-    /// Process multiple multipart images concurrently
-    /// Returns results in the same order as input
-    pub async fn process_multipart_batch(
-        &self,
-        multiparts: Vec<Vec<u8>>,
-    ) -> Vec<OcrResult> {
+    pub async fn process_multipart_batch(&self, multiparts: Vec<Vec<u8>>) -> Vec<OcrResult> {
         let total = multiparts.len();
         info!(
             "[chandra] batch_start | total={} concurrency={}",
@@ -164,11 +156,11 @@ impl AsyncOcrProcessor {
             }
         }
 
-        // CRITICAL: Sort by index to maintain input order
         results.sort_by_key(|r| r.index);
 
         let success_count = results.iter().filter(|r| r.success).count();
-        let avg_time: f64 = results.iter().map(|r| r.processing_time_secs).sum::<f64>() / total as f64;
+        let avg_time: f64 = results.iter().map(|r| r.processing_time_secs).sum::<f64>()
+            / total as f64;
 
         info!(
             "[chandra] batch_done | success={}/{} avg_time={:.2}s",
@@ -178,12 +170,7 @@ impl AsyncOcrProcessor {
         results
     }
 
-    /// Process a single multipart with retry logic
-    async fn process_single_multipart(
-        &self,
-        index: usize,
-        multipart_data: Vec<u8>,
-    ) -> OcrResult {
+    async fn process_single_multipart(&self, index: usize, multipart_data: Vec<u8>) -> OcrResult {
         let start = std::time::Instant::now();
         let data_size = multipart_data.len();
 
@@ -197,7 +184,10 @@ impl AsyncOcrProcessor {
                 let delay = self.calculate_retry_delay(attempt);
                 warn!(
                     "[chandra] retry | index={} attempt={}/{} delay={:.1}s",
-                    index, attempt, self.config.max_retries, delay.as_secs_f64()
+                    index,
+                    attempt,
+                    self.config.max_retries,
+                    delay.as_secs_f64()
                 );
                 sleep(delay).await;
             }
@@ -208,7 +198,9 @@ impl AsyncOcrProcessor {
                     let cost_breakdown = json_response.get("cost_breakdown").cloned();
                     info!(
                         "[chandra] task_success | index={} time={:.2}s attempts={}",
-                        index, elapsed, attempt + 1
+                        index,
+                        elapsed,
+                        attempt + 1
                     );
                     return OcrResult {
                         index,
@@ -221,7 +213,7 @@ impl AsyncOcrProcessor {
                 }
                 Err(e) => {
                     let error_str = format!("{:?}", e);
-                    
+
                     if !self.is_retriable_error(&error_str) {
                         let elapsed = start.elapsed().as_secs_f64();
                         error!(
@@ -237,14 +229,16 @@ impl AsyncOcrProcessor {
                             cost_breakdown: None,
                         };
                     }
-                    
+
                     if self.is_rate_limit_error(&e) {
                         warn!(
                             "[chandra] rate_limit | index={} attempt={}/{}",
-                            index, attempt + 1, self.config.max_retries
+                            index,
+                            attempt + 1,
+                            self.config.max_retries
                         );
                     }
-                    
+
                     if attempt == self.config.max_retries - 1 {
                         let elapsed = start.elapsed().as_secs_f64();
                         error!(
@@ -266,60 +260,64 @@ impl AsyncOcrProcessor {
         }
     }
 
-    /// Calculate retry delay with exponential backoff + jitter
     fn calculate_retry_delay(&self, attempt: u32) -> Duration {
-        let base_delay_ms = self.config.base_retry_delay_secs * 1000 * (2_u64.pow(attempt.saturating_sub(1)));
+        let base_delay_ms =
+            self.config.base_retry_delay_secs * 1000 * (2_u64.pow(attempt.saturating_sub(1)));
         let jitter_range = (base_delay_ms * self.config.jitter_percent) / 100;
-        
+
         let mut rng = rand::thread_rng();
-        let jitter: i64 = rng.gen_range(-(jitter_range as i64)..=(jitter_range as i64));
-        
+        let jitter: i64 =
+            rng.gen_range(-(jitter_range as i64)..=(jitter_range as i64));
+
         let final_delay_ms = (base_delay_ms as i64 + jitter).max(0) as u64;
         Duration::from_millis(final_delay_ms)
     }
 
-    /// Check if error is a rate limit error
     fn is_rate_limit_error(&self, error: &anyhow::Error) -> bool {
         let error_str = format!("{:?}", error).to_lowercase();
-        error_str.contains("429") || 
-        error_str.contains("rate limit") || 
-        error_str.contains("too many requests")
+        error_str.contains("429")
+            || error_str.contains("rate limit")
+            || error_str.contains("too many requests")
     }
 
-    /// Check if error should be retried
     fn is_retriable_error(&self, error_str: &str) -> bool {
         let lower = error_str.to_lowercase();
-        
-        // Don't retry client errors (4xx except 429)
-        if lower.contains("400") || lower.contains("bad request") ||
-           lower.contains("401") || lower.contains("unauthorized") ||
-           lower.contains("403") || lower.contains("forbidden") ||
-           lower.contains("404") || lower.contains("not found") {
+
+        if lower.contains("400")
+            || lower.contains("bad request")
+            || lower.contains("401")
+            || lower.contains("unauthorized")
+            || lower.contains("403")
+            || lower.contains("forbidden")
+            || lower.contains("404")
+            || lower.contains("not found")
+        {
             return false;
         }
-        
-        lower.contains("429") ||
-        lower.contains("500") || lower.contains("502") ||
-        lower.contains("503") || lower.contains("504") ||
-        lower.contains("rate limit") ||
-        lower.contains("too many requests") ||
-        lower.contains("timeout") ||
-        lower.contains("connection")
+
+        lower.contains("429")
+            || lower.contains("500")
+            || lower.contains("502")
+            || lower.contains("503")
+            || lower.contains("504")
+            || lower.contains("rate limit")
+            || lower.contains("too many requests")
+            || lower.contains("timeout")
+            || lower.contains("connection")
     }
 
-    /// Execute OCR: upload -> poll -> return raw JSON
     async fn execute_ocr(&self, multipart_data: &[u8]) -> AnyhowResult<serde_json::Value> {
         let check_url = self.upload_multipart(multipart_data).await?;
         let raw_json = self.poll_until_complete(&check_url).await?;
         Ok(raw_json)
     }
 
-    /// Upload multipart file with all configured parameters
     async fn upload_multipart(&self, data: &[u8]) -> AnyhowResult<String> {
         let part = if let Some(kind) = infer::get(data) {
             debug!(
                 "[chandra] upload_detect | mime={} ext={}",
-                kind.mime_type(), kind.extension()
+                kind.mime_type(),
+                kind.extension()
             );
             Part::bytes(data.to_vec())
                 .file_name(format!("file.{}", kind.extension()))
@@ -336,7 +334,6 @@ impl AsyncOcrProcessor {
             .text("output_format", self.config.output_format.clone())
             .text("mode", self.config.mode.clone());
 
-        // --- Append optional parameters ---
         if let Some(ref schema) = self.config.page_schema {
             form = form.text("page_schema", schema.clone());
             debug!("[chandra] upload_param | page_schema=set");
@@ -374,21 +371,24 @@ impl AsyncOcrProcessor {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            // Try to extract structured error from Datalab JSON response
             let error_msg = serde_json::from_str::<serde_json::Value>(&body)
                 .ok()
                 .and_then(|v| {
                     v.get("error")
                         .and_then(|e| e.as_str())
                         .map(String::from)
-                        .or_else(|| v.get("detail")
-                            .and_then(|d| d.as_str())
-                            .map(String::from))
+                        .or_else(|| {
+                            v.get("detail")
+                                .and_then(|d| d.as_str())
+                                .map(String::from)
+                        })
                 })
                 .unwrap_or_else(|| body.clone());
             error!(
                 "[chandra] api_error | status={} error={} raw_body={}",
-                status.as_u16(), error_msg, body
+                status.as_u16(),
+                error_msg,
+                body
             );
             anyhow::bail!("Datalab API error [{}]: {}", status.as_u16(), error_msg);
         }
@@ -402,7 +402,6 @@ impl AsyncOcrProcessor {
         Ok(api_response.request_check_url)
     }
 
-    /// Poll status endpoint until complete
     async fn poll_until_complete(&self, check_url: &str) -> AnyhowResult<serde_json::Value> {
         for attempt in 0..self.config.max_poll_attempts {
             sleep(Duration::from_secs(self.config.poll_interval_secs)).await;
@@ -423,7 +422,10 @@ impl AsyncOcrProcessor {
                     .unwrap_or_else(|| poll_body.clone());
                 error!(
                     "[chandra] poll_http_error | status={} attempt={}/{} error={}",
-                    poll_status.as_u16(), attempt + 1, self.config.max_poll_attempts, poll_error
+                    poll_status.as_u16(),
+                    attempt + 1,
+                    self.config.max_poll_attempts,
+                    poll_error
                 );
                 anyhow::bail!("Poll failed [{}]: {}", poll_status.as_u16(), poll_error);
             }
@@ -436,10 +438,12 @@ impl AsyncOcrProcessor {
 
             match status_str {
                 "complete" => {
-                    let quality = json_resp.get("parse_quality_score")
+                    let quality = json_resp
+                        .get("parse_quality_score")
                         .and_then(|q| q.as_f64())
                         .unwrap_or(0.0);
-                    let pages = json_resp.get("page_count")
+                    let pages = json_resp
+                        .get("page_count")
                         .and_then(|p| p.as_u64())
                         .unwrap_or(0);
                     info!(
@@ -459,7 +463,9 @@ impl AsyncOcrProcessor {
                 "processing" | "queued" => {
                     debug!(
                         "[chandra] poll_waiting | status={} attempt={}/{}",
-                        status_str, attempt + 1, self.config.max_poll_attempts
+                        status_str,
+                        attempt + 1,
+                        self.config.max_poll_attempts
                     );
                 }
                 other => {
@@ -472,7 +478,10 @@ impl AsyncOcrProcessor {
             "[chandra] poll_timeout | attempts={}",
             self.config.max_poll_attempts
         );
-        anyhow::bail!("Polling timeout after {} attempts", self.config.max_poll_attempts)
+        anyhow::bail!(
+            "Polling timeout after {} attempts",
+            self.config.max_poll_attempts
+        )
     }
 }
 
@@ -528,7 +537,6 @@ impl PyDocumentConfig {
         max_retries: Option<u32>,
         base_retry_delay_secs: Option<u64>,
         jitter_percent: Option<u64>,
-        // --- NEW parameters ---
         page_schema: Option<String>,
         paginate: Option<bool>,
         page_range: Option<String>,
@@ -539,57 +547,81 @@ impl PyDocumentConfig {
     ) -> PyResult<Self> {
         let mut config = OcrConfig::default();
         config.api_key = api_key;
-        
-        if let Some(url) = api_url { config.api_url = url; }
-        
-        // Validate output_format
+
+        if let Some(url) = api_url {
+            config.api_url = url;
+        }
+
         if let Some(fmt) = output_format {
             match fmt.as_str() {
                 "json" | "html" | "markdown" | "chunks" => config.output_format = fmt,
-                _ => return Err(PyValueError::new_err(
-                    format!("Invalid output_format '{}'. Must be one of: 'json', 'html', 'markdown', 'chunks'", fmt)
-                )),
+                _ => {
+                    return Err(PyValueError::new_err(format!(
+                        "Invalid output_format '{}'. Must be one of: 'json', 'html', 'markdown', 'chunks'",
+                        fmt
+                    )))
+                }
             }
         }
-        
-        // Validate mode
+
         if let Some(m) = mode {
             match m.as_str() {
                 "fast" | "balanced" | "accurate" => config.mode = m,
-                _ => return Err(PyValueError::new_err(
-                    format!("Invalid mode '{}'. Must be one of: 'fast', 'balanced', 'accurate'", m)
-                )),
+                _ => {
+                    return Err(PyValueError::new_err(format!(
+                        "Invalid mode '{}'. Must be one of: 'fast', 'balanced', 'accurate'",
+                        m
+                    )))
+                }
             }
         }
-        
-        if let Some(c) = max_concurrent_requests { config.max_concurrent_requests = c; }
-        if let Some(p) = poll_interval_secs { config.poll_interval_secs = p; }
-        if let Some(m) = max_poll_attempts { config.max_poll_attempts = m; }
-        if let Some(r) = max_retries { config.max_retries = r; }
-        if let Some(d) = base_retry_delay_secs { config.base_retry_delay_secs = d; }
-        if let Some(j) = jitter_percent { config.jitter_percent = j; }
 
-        // --- NEW parameters ---
+        if let Some(c) = max_concurrent_requests {
+            config.max_concurrent_requests = c;
+        }
+        if let Some(p) = poll_interval_secs {
+            config.poll_interval_secs = p;
+        }
+        if let Some(m) = max_poll_attempts {
+            config.max_poll_attempts = m;
+        }
+        if let Some(r) = max_retries {
+            config.max_retries = r;
+        }
+        if let Some(d) = base_retry_delay_secs {
+            config.base_retry_delay_secs = d;
+        }
+        if let Some(j) = jitter_percent {
+            config.jitter_percent = j;
+        }
+
         if let Some(schema) = page_schema {
-            // Validate JSON
-            serde_json::from_str::<serde_json::Value>(&schema)
-                .map_err(|e| PyValueError::new_err(
-                    format!("page_schema is not valid JSON: {}", e)
-                ))?;
+            serde_json::from_str::<serde_json::Value>(&schema).map_err(|e| {
+                PyValueError::new_err(format!("page_schema is not valid JSON: {}", e))
+            })?;
             config.page_schema = Some(schema);
         }
-        if let Some(p) = paginate { config.paginate = p; }
-        if let Some(r) = page_range { config.page_range = Some(r); }
-        if let Some(m) = max_pages { config.max_pages = Some(m); }
-        if let Some(d) = disable_image_extraction { config.disable_image_extraction = d; }
+        if let Some(p) = paginate {
+            config.paginate = p;
+        }
+        if let Some(r) = page_range {
+            config.page_range = Some(r);
+        }
+        if let Some(m) = max_pages {
+            config.max_pages = Some(m);
+        }
+        if let Some(d) = disable_image_extraction {
+            config.disable_image_extraction = d;
+        }
         if let Some(e) = extras {
-            serde_json::from_str::<serde_json::Value>(&e)
-                .map_err(|e| PyValueError::new_err(
-                    format!("extras is not valid JSON: {}", e)
-                ))?;
+            serde_json::from_str::<serde_json::Value>(&e).map_err(|e| {
+                PyValueError::new_err(format!("extras is not valid JSON: {}", e))
+            })?;
             config.extras = Some(e);
         }
-        if let Some(w) = webhook_url { config.webhook_url = Some(w); }
+        if let Some(w) = webhook_url {
+            config.webhook_url = Some(w);
+        }
 
         Ok(Self { inner: config })
     }
@@ -621,13 +653,6 @@ impl PyDocumentProcessor {
         Ok(Self { processor })
     }
 
-    /// Process multiple multipart images
-    /// 
-    /// Args:
-    ///     multiparts: List of bytes objects, one per image
-    /// 
-    /// Returns:
-    ///     List of dicts with JSON responses, ordered by input index
     fn process_multiparts<'py>(
         &self,
         py: Python<'py>,
@@ -636,11 +661,9 @@ impl PyDocumentProcessor {
         let mut rust_multiparts = Vec::new();
 
         for (idx, item) in multiparts.iter().enumerate() {
-            let bytes_obj = item.downcast::<PyBytes>()
-                .map_err(|_| PyValueError::new_err(
-                    format!("Item {} is not bytes object", idx)
-                ))?;
-            
+            let bytes_obj = item.downcast::<PyBytes>().map_err(|_| {
+                PyValueError::new_err(format!("Item {} is not bytes object", idx))
+            })?;
             rust_multiparts.push(bytes_obj.as_bytes().to_vec());
         }
 
@@ -659,14 +682,16 @@ impl PyDocumentProcessor {
                     dict.set_item("processing_time_secs", result.processing_time_secs)?;
 
                     if let Some(json) = result.json_response {
-                        let json_str = serde_json::to_string(&json)
-                            .map_err(|e| PyRuntimeError::new_err(format!("JSON error: {}", e)))?;
+                        let json_str = serde_json::to_string(&json).map_err(|e| {
+                            PyRuntimeError::new_err(format!("JSON error: {}", e))
+                        })?;
                         dict.set_item("json_response", json_str)?;
                     }
 
                     if let Some(ref cost) = result.cost_breakdown {
-                        let cost_py = json_value_to_py(py, cost)
-                            .map_err(|e| PyRuntimeError::new_err(format!("Cost JSON error: {}", e)))?;
+                        let cost_py = json_value_to_py(py, cost).map_err(|e| {
+                            PyRuntimeError::new_err(format!("Cost JSON error: {}", e))
+                        })?;
                         dict.set_item("cost_breakdown", cost_py)?;
                     }
 
@@ -680,9 +705,12 @@ impl PyDocumentProcessor {
                 Ok(py_results.into())
             })
         })
-        .map_err(|e| PyRuntimeError::new_err(
-            format!("Failed to schedule async task. Is an event loop running? Error: {}", e)
-        ))
+        .map_err(|e| {
+            PyRuntimeError::new_err(format!(
+                "Failed to schedule async task. Is an event loop running? Error: {}",
+                e
+            ))
+        })
     }
 
     fn __repr__(&self) -> String {

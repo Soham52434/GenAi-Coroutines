@@ -11,8 +11,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 // ============================================================================
-// PUBLIC API — All params are optional, passed directly to the API.
-//              No client-side validation. The API returns its own errors.
+// PUBLIC API
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -23,7 +22,6 @@ pub struct OpenAIChatBatchRequest {
     pub model: String,
     pub response_format: Value,
     pub timeout_secs: u64,
-    // --- All optional params sent as-is to the API ---
     pub temperature: Option<f64>,
     pub top_p: Option<f64>,
     pub max_output_tokens: Option<u32>,
@@ -39,20 +37,16 @@ pub struct OpenAIChatBatchRequest {
     pub parallel_tool_calls: Option<bool>,
     pub service_tier: Option<String>,
     pub stream: Option<bool>,
-    // --- Retry configuration ---
     pub max_retries: u32,
     pub retry_delay_min_ms: u64,
     pub retry_delay_max_ms: u64,
-    // --- Concurrency control ---
     pub max_concurrent_requests: usize,
 }
 
 // ============================================================================
-// ERROR — Full passthrough from OpenAI
+// ERROR
 // ============================================================================
 
-/// All 4 fields from OpenAI error responses:
-/// {"error": {"message": "...", "type": "...", "param": "...", "code": "..."}}
 #[derive(Debug, Clone)]
 struct OpenAIErrorDetail {
     message: String,
@@ -87,8 +81,12 @@ fn extract_error_detail(json_resp: &Value) -> OpenAIErrorDetail {
 
 fn format_error_string(status: u16, d: &OpenAIErrorDetail) -> String {
     let mut s = format!("HTTP {} [{}]", status, d.error_type);
-    if let Some(ref p) = d.param { s.push_str(&format!(": param={}", p)); }
-    if let Some(ref c) = d.code { s.push_str(&format!(": code={}", c)); }
+    if let Some(ref p) = d.param {
+        s.push_str(&format!(": param={}", p));
+    }
+    if let Some(ref c) = d.code {
+        s.push_str(&format!(": code={}", c));
+    }
     s.push_str(&format!(": {}", d.message));
     s
 }
@@ -133,12 +131,18 @@ enum ApiError {
 }
 
 impl ApiError {
-    fn is_retriable(&self) -> bool { matches!(self, ApiError::Retriable { .. }) }
+    fn is_retriable(&self) -> bool {
+        matches!(self, ApiError::Retriable { .. })
+    }
     fn detail(&self) -> &OpenAIErrorDetail {
-        match self { ApiError::Retriable { detail, .. } | ApiError::Fatal { detail, .. } => detail }
+        match self {
+            ApiError::Retriable { detail, .. } | ApiError::Fatal { detail, .. } => detail,
+        }
     }
     fn status(&self) -> u16 {
-        match self { ApiError::Retriable { status, .. } | ApiError::Fatal { status, .. } => *status }
+        match self {
+            ApiError::Retriable { status, .. } | ApiError::Fatal { status, .. } => *status,
+        }
     }
 }
 
@@ -228,22 +232,32 @@ pub async fn openai_chat_batch(
         });
     }
 
-    let results: Vec<BatchItemResult> = ordered.into_iter().enumerate().map(|(i, opt)| {
-        opt.unwrap_or_else(|| {
-            error!("[llm] task_missing | index={}", i);
-            BatchItemResult::Error {
-                message: format!("Task {} did not complete", i),
-                error_type: "internal_error".into(),
-                param: None, code: None, is_retriable: false, attempts: 0,
-            }
+    let results: Vec<BatchItemResult> = ordered
+        .into_iter()
+        .enumerate()
+        .map(|(i, opt)| {
+            opt.unwrap_or_else(|| {
+                error!("[llm] task_missing | index={}", i);
+                BatchItemResult::Error {
+                    message: format!("Task {} did not complete", i),
+                    error_type: "internal_error".into(),
+                    param: None,
+                    code: None,
+                    is_retriable: false,
+                    attempts: 0,
+                }
+            })
         })
-    }).collect();
+        .collect();
 
     info!("[llm] batch_done | ok={}/{} errors={}", ok, n, err);
-    Ok(OpenAIChatBatchResponse { results, total_success: ok, total_errors: err })
+    Ok(OpenAIChatBatchResponse {
+        results,
+        total_success: ok,
+        total_errors: err,
+    })
 }
 
-/// Shared immutable state across all concurrent calls
 struct SharedRequestState {
     api_key: String,
     system_prompt: String,
@@ -294,19 +308,26 @@ async fn call_with_retry(
                     let retriable = err.is_retriable();
                     let status = err.status();
                     let detail = match err {
-                        ApiError::Retriable { detail, .. } | ApiError::Fatal { detail, .. } => detail,
+                        ApiError::Retriable { detail, .. } | ApiError::Fatal { detail, .. } => {
+                            detail
+                        }
                     };
                     return Err((detail, status, retriable, attempt));
                 }
-                // Exponential backoff with random jitter, clamped to [min, max]
                 let base = min_ms * 2u64.pow(attempt - 1);
                 let jitter_range = base / 2;
-                let jitter: i64 = rand::thread_rng().gen_range(-(jitter_range as i64)..=(jitter_range as i64));
-                let delay = ((base as i64 + jitter).max(min_ms as i64) as u64).min(max_ms);
+                let jitter: i64 = rand::thread_rng()
+                    .gen_range(-(jitter_range as i64)..=(jitter_range as i64));
+                let delay =
+                    ((base as i64 + jitter).max(min_ms as i64) as u64).min(max_ms);
                 warn!(
                     "[llm] retry | index={} attempt={}/{} delay={}ms type={} msg={}",
-                    index, attempt, max_retries, delay,
-                    err.detail().error_type, err.detail().message
+                    index,
+                    attempt,
+                    max_retries,
+                    delay,
+                    err.detail().error_type,
+                    err.detail().message
                 );
                 sleep(Duration::from_millis(delay)).await;
             }
@@ -315,7 +336,7 @@ async fn call_with_retry(
 }
 
 // ============================================================================
-// SINGLE API CALL — Pure pass-through, no client-side checks
+// SINGLE API CALL
 // ============================================================================
 
 async fn call_openai(
@@ -326,8 +347,9 @@ async fn call_openai(
 ) -> Result<(Value, Option<Value>), ApiError> {
     let mut input = user_prompt.to_string();
 
-    // OpenAI requires the word "JSON" in input when json_object format is used
-    if let Some(t) = s.response_format.as_object()
+    if let Some(t) = s
+        .response_format
+        .as_object()
         .and_then(|o| o.get("type"))
         .and_then(|v| v.as_str())
     {
@@ -336,24 +358,33 @@ async fn call_openai(
         }
     }
 
-    // --- Build body: ONLY include params that are set (not None) ---
     let mut body = json!({
         "model": s.model,
         "instructions": s.system_prompt,
         "input": input,
     });
 
-    // --- text.format (from response_format) ---
     if !s.response_format.is_null() {
         if let Some(obj) = s.response_format.as_object() {
             if let Some(type_val) = obj.get("type").and_then(|v| v.as_str()) {
                 match type_val {
                     "json_schema" => {
                         if let Some(schema_obj) = obj.get("json_schema") {
-                            let name = schema_obj.get("name").and_then(|n| n.as_str()).unwrap_or("response");
+                            let name = schema_obj
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("response");
                             if let Some(schema) = schema_obj.get("schema") {
-                                let strict = schema_obj.get("strict").and_then(|s| s.as_bool()).unwrap_or(true);
-                                body["text"] = json!({"format": {"type": "json_schema", "name": name, "schema": schema.clone(), "strict": strict}});
+                                let strict = schema_obj
+                                    .get("strict")
+                                    .and_then(|s| s.as_bool())
+                                    .unwrap_or(true);
+                                body["text"] = json!({"format": {
+                                    "type": "json_schema",
+                                    "name": name,
+                                    "schema": schema.clone(),
+                                    "strict": strict
+                                }});
                             } else {
                                 body["text"] = json!({"format": {"type": "json_object"}});
                             }
@@ -361,60 +392,107 @@ async fn call_openai(
                             body["text"] = json!({"format": {"type": "json_object"}});
                         }
                     }
-                    "json_object" => { body["text"] = json!({"format": {"type": "json_object"}}); }
-                    _ => { body["text"] = json!({"format": {"type": "text"}}); }
+                    "json_object" => {
+                        body["text"] = json!({"format": {"type": "json_object"}});
+                    }
+                    _ => {
+                        body["text"] = json!({"format": {"type": "text"}});
+                    }
                 }
             }
         }
     }
 
-    // --- All optional params: pass through as-is, only if set ---
-    if let Some(v) = s.temperature        { body["temperature"] = json!(v); }
-    if let Some(v) = s.top_p              { body["top_p"] = json!(v); }
-    if let Some(v) = s.max_output_tokens  { body["max_output_tokens"] = json!(v); }
-    if let Some(v) = s.store              { body["store"] = json!(v); }
-    if let Some(v) = s.stream             { body["stream"] = json!(v); }
-    if let Some(ref v) = s.truncation     { body["truncation"] = json!(v); }
-    if let Some(ref v) = s.service_tier   { body["service_tier"] = json!(v); }
-    if let Some(v) = s.parallel_tool_calls { body["parallel_tool_calls"] = json!(v); }
+    if let Some(v) = s.temperature {
+        body["temperature"] = json!(v);
+    }
+    if let Some(v) = s.top_p {
+        body["top_p"] = json!(v);
+    }
+    if let Some(v) = s.max_output_tokens {
+        body["max_output_tokens"] = json!(v);
+    }
+    if let Some(v) = s.store {
+        body["store"] = json!(v);
+    }
+    if let Some(v) = s.stream {
+        body["stream"] = json!(v);
+    }
+    if let Some(ref v) = s.truncation {
+        body["truncation"] = json!(v);
+    }
+    if let Some(ref v) = s.service_tier {
+        body["service_tier"] = json!(v);
+    }
+    if let Some(v) = s.parallel_tool_calls {
+        body["parallel_tool_calls"] = json!(v);
+    }
 
-    // reasoning object
     if s.reasoning_effort.is_some() || s.reasoning_summary.is_some() {
         let mut r = json!({});
-        if let Some(ref e) = s.reasoning_effort  { r["effort"] = json!(e); }
-        if let Some(ref su) = s.reasoning_summary { r["summary"] = json!(su); }
+        if let Some(ref e) = s.reasoning_effort {
+            r["effort"] = json!(e);
+        }
+        if let Some(ref su) = s.reasoning_summary {
+            r["summary"] = json!(su);
+        }
         body["reasoning"] = r;
     }
 
-    // tools & tool_choice
-    if let Some(ref v) = s.tools       { body["tools"] = v.clone(); }
-    if let Some(ref v) = s.tool_choice { body["tool_choice"] = v.clone(); }
-
-    // multi-turn
-    if let Some(ref v) = s.previous_response_id { body["previous_response_id"] = json!(v); }
-    if let Some(ref v) = s.include              { body["include"] = json!(v); }
-    if let Some(ref v) = s.metadata             { body["metadata"] = v.clone(); }
+    if let Some(ref v) = s.tools {
+        body["tools"] = v.clone();
+    }
+    if let Some(ref v) = s.tool_choice {
+        body["tool_choice"] = v.clone();
+    }
+    if let Some(ref v) = s.previous_response_id {
+        body["previous_response_id"] = json!(v);
+    }
+    if let Some(ref v) = s.include {
+        body["include"] = json!(v);
+    }
+    if let Some(ref v) = s.metadata {
+        body["metadata"] = v.clone();
+    }
 
     debug!("[llm] request_send | model={}", s.model);
 
-    // --- Send ---
     let response = tokio::time::timeout(
         timeout,
-        client.post(OPENAI_URL).bearer_auth(&s.api_key).json(&body).send()
+        client
+            .post(OPENAI_URL)
+            .bearer_auth(&s.api_key)
+            .json(&body)
+            .send(),
     )
     .await
     .map_err(|_| ApiError::Retriable {
-        detail: OpenAIErrorDetail { message: format!("Timeout after {}s", timeout.as_secs()), error_type: "timeout".into(), param: None, code: None },
+        detail: OpenAIErrorDetail {
+            message: format!("Timeout after {}s", timeout.as_secs()),
+            error_type: "timeout".into(),
+            param: None,
+            code: None,
+        },
         status: 0,
     })?
     .map_err(|e| ApiError::Retriable {
-        detail: OpenAIErrorDetail { message: format!("Network error: {e}"), error_type: "network_error".into(), param: None, code: None },
+        detail: OpenAIErrorDetail {
+            message: format!("Network error: {e}"),
+            error_type: "network_error".into(),
+            param: None,
+            code: None,
+        },
         status: 0,
     })?;
 
     let status = response.status();
     let json_resp: Value = response.json().await.map_err(|e| ApiError::Fatal {
-        detail: OpenAIErrorDetail { message: format!("Invalid JSON: {e}"), error_type: "parse_error".into(), param: None, code: None },
+        detail: OpenAIErrorDetail {
+            message: format!("Invalid JSON: {e}"),
+            error_type: "parse_error".into(),
+            param: None,
+            code: None,
+        },
         status: status.as_u16(),
     })?;
 
@@ -424,24 +502,44 @@ async fn call_openai(
             let usage = json_resp.get("usage").cloned();
             Ok((json_resp, usage))
         }
-        // Retriable
-        StatusCode::TOO_MANY_REQUESTS | StatusCode::INTERNAL_SERVER_ERROR |
-        StatusCode::SERVICE_UNAVAILABLE | StatusCode::GATEWAY_TIMEOUT => {
+        StatusCode::TOO_MANY_REQUESTS
+        | StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => {
             let d = extract_error_detail(&json_resp);
-            error!("[llm] api_error | status={} type={} param={:?} code={:?} msg={}", status.as_u16(), d.error_type, d.param, d.code, d.message);
-            Err(ApiError::Retriable { detail: d, status: status.as_u16() })
+            error!(
+                "[llm] api_error | status={} type={} param={:?} code={:?} msg={}",
+                status.as_u16(),
+                d.error_type,
+                d.param,
+                d.code,
+                d.message
+            );
+            Err(ApiError::Retriable {
+                detail: d,
+                status: status.as_u16(),
+            })
         }
-        // Non-retriable — pass through the FULL API error
         _ => {
             let d = extract_error_detail(&json_resp);
-            error!("[llm] api_error | status={} type={} param={:?} code={:?} msg={}", status.as_u16(), d.error_type, d.param, d.code, d.message);
-            Err(ApiError::Fatal { detail: d, status: status.as_u16() })
+            error!(
+                "[llm] api_error | status={} type={} param={:?} code={:?} msg={}",
+                status.as_u16(),
+                d.error_type,
+                d.param,
+                d.code,
+                d.message
+            );
+            Err(ApiError::Fatal {
+                detail: d,
+                status: status.as_u16(),
+            })
         }
     }
 }
 
 // ============================================================================
-// PYTHON BINDINGS — All params exposed, no validation
+// PYTHON BINDINGS
 // ============================================================================
 
 #[pyclass(name = "ResponsesRequest")]
@@ -538,7 +636,6 @@ impl PyResponsesRequest {
         })
     }
 
-    // --- Getters ---
     #[getter] fn user_prompts(&self) -> Vec<String> { self.inner.user_prompts.clone() }
     #[getter] fn model(&self) -> String { self.inner.model.clone() }
     #[getter] fn system_prompt(&self) -> String { self.inner.system_prompt.clone() }
@@ -561,18 +658,28 @@ impl PyResponsesRequest {
     #[getter] fn max_concurrent_requests(&self) -> usize { self.inner.max_concurrent_requests }
 
     #[getter]
-    fn response_format(&self, py: Python) -> PyResult<PyObject> { json_to_py(py, &self.inner.response_format) }
+    fn response_format(&self, py: Python) -> PyResult<PyObject> {
+        json_to_py(py, &self.inner.response_format)
+    }
     #[getter]
-    fn tools(&self, py: Python) -> PyResult<Option<PyObject>> { json_opt_to_py(py, &self.inner.tools) }
+    fn tools(&self, py: Python) -> PyResult<Option<PyObject>> {
+        json_opt_to_py(py, &self.inner.tools)
+    }
     #[getter]
-    fn tool_choice(&self, py: Python) -> PyResult<Option<PyObject>> { json_opt_to_py(py, &self.inner.tool_choice) }
+    fn tool_choice(&self, py: Python) -> PyResult<Option<PyObject>> {
+        json_opt_to_py(py, &self.inner.tool_choice)
+    }
     #[getter]
-    fn metadata(&self, py: Python) -> PyResult<Option<PyObject>> { json_opt_to_py(py, &self.inner.metadata) }
+    fn metadata(&self, py: Python) -> PyResult<Option<PyObject>> {
+        json_opt_to_py(py, &self.inner.metadata)
+    }
 
     fn __repr__(&self) -> String {
         format!(
             "ResponsesRequest(model='{}', prompts={}, timeout={}s)",
-            self.inner.model, self.inner.user_prompts.len(), self.inner.timeout_secs,
+            self.inner.model,
+            self.inner.user_prompts.len(),
+            self.inner.timeout_secs,
         )
     }
 }
@@ -583,9 +690,15 @@ pub struct PyResponsesProcessor;
 #[pymethods]
 impl PyResponsesProcessor {
     #[new]
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 
-    fn process_batch<'py>(&self, py: Python<'py>, request: PyResponsesRequest) -> PyResult<Bound<'py, PyAny>> {
+    fn process_batch<'py>(
+        &self,
+        py: Python<'py>,
+        request: PyResponsesRequest,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let req = request.inner.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let result = openai_chat_batch(req).await;
@@ -601,14 +714,25 @@ impl PyResponsesProcessor {
                             match item {
                                 BatchItemResult::Success { output, usage } => {
                                     d.set_item("success", true)?;
-                                    d.set_item("raw_response", serde_json::to_string(&output)
-                                        .map_err(|e| PyRuntimeError::new_err(format!("JSON: {}", e)))?)?;
+                                    d.set_item(
+                                        "raw_response",
+                                        serde_json::to_string(&output).map_err(|e| {
+                                            PyRuntimeError::new_err(format!("JSON: {}", e))
+                                        })?,
+                                    )?;
                                     if let Some(ref usage_val) = usage {
                                         let usage_py = json_to_py(py, usage_val)?;
                                         d.set_item("usage", usage_py)?;
                                     }
                                 }
-                                BatchItemResult::Error { message, error_type, param, code, is_retriable, attempts } => {
+                                BatchItemResult::Error {
+                                    message,
+                                    error_type,
+                                    param,
+                                    code,
+                                    is_retriable,
+                                    attempts,
+                                } => {
                                     d.set_item("success", false)?;
                                     d.set_item("error", message)?;
                                     d.set_item("error_type", error_type)?;
@@ -630,7 +754,9 @@ impl PyResponsesProcessor {
         .map_err(|e| PyRuntimeError::new_err(format!("No event loop? {}", e)))
     }
 
-    fn __repr__(&self) -> String { "ResponsesProcessor()".into() }
+    fn __repr__(&self) -> String {
+        "ResponsesProcessor()".into()
+    }
 }
 
 // ============================================================================
@@ -638,19 +764,34 @@ impl PyResponsesProcessor {
 // ============================================================================
 
 fn py_to_json(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<Value> {
-    let s: String = obj.py().import_bound("json")?.call_method1("dumps", (obj,))?.extract()?;
-    serde_json::from_str(&s).map_err(|e| PyValueError::new_err(format!("Invalid {} JSON: {}", name, e)))
+    let s: String = obj
+        .py()
+        .import_bound("json")?
+        .call_method1("dumps", (obj,))?
+        .extract()?;
+    serde_json::from_str(&s)
+        .map_err(|e| PyValueError::new_err(format!("Invalid {} JSON: {}", name, e)))
 }
 
 fn py_opt_to_json(obj: Option<&Bound<'_, PyAny>>, name: &str) -> PyResult<Option<Value>> {
-    match obj { Some(o) => Ok(Some(py_to_json(o, name)?)), None => Ok(None) }
+    match obj {
+        Some(o) => Ok(Some(py_to_json(o, name)?)),
+        None => Ok(None),
+    }
 }
 
 fn json_to_py(py: Python, v: &Value) -> PyResult<PyObject> {
-    let s = serde_json::to_string(v).map_err(|e| PyValueError::new_err(format!("{}", e)))?;
-    Ok(py.import_bound("json")?.call_method1("loads", (s,))?.to_object(py))
+    let s = serde_json::to_string(v)
+        .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+    Ok(py
+        .import_bound("json")?
+        .call_method1("loads", (s,))?
+        .to_object(py))
 }
 
 fn json_opt_to_py(py: Python, v: &Option<Value>) -> PyResult<Option<PyObject>> {
-    match v { Some(val) => Ok(Some(json_to_py(py, val)?)), None => Ok(None) }
+    match v {
+        Some(val) => Ok(Some(json_to_py(py, val)?)),
+        None => Ok(None),
+    }
 }

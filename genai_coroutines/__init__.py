@@ -3,8 +3,10 @@ genai_coroutines - High-performance async batch processing for GenAI APIs
 """
 import json
 
-# Import from the Rust-compiled extension
-from genai_coroutines.genai_coroutines import ocr, responses
+# The Rust extension IS the genai_coroutines module (module-name = "genai_coroutines").
+# Submodules are registered in sys.modules by lib.rs at import time,
+# so we can import them directly — no double-nesting needed.
+from genai_coroutines import ocr, responses
 
 # Re-export classes for convenience
 DocumentConfig = ocr.DocumentConfig
@@ -31,8 +33,8 @@ def parse_responses(results):
 
     Returns exactly ONE string per input prompt (1:1 mapping).
     For each prompt, aggregates all text from message content blocks.
-    For tool-call-only responses, returns "<tool_call>" placeholder.
-    Failed prompts return "".
+    For tool-call-only responses, returns the full raw JSON so you can
+    inspect tool calls. Failed prompts return "".
 
     Args:
         results (dict): Results from ResponsesProcessor.process_batch()
@@ -58,7 +60,6 @@ def parse_responses(results):
             response_json = json.loads(result["raw_response"])
             output_items = response_json.get("output", [])
 
-            # Collect all text fragments from message content blocks
             text_parts = []
             has_tool_calls = False
 
@@ -76,11 +77,10 @@ def parse_responses(results):
                     has_tool_calls = True
 
             if text_parts:
-                # Aggregate all text from this single response
                 parsed.append("\n".join(text_parts))
             elif has_tool_calls:
-                # Model called tools instead of producing text
-                # Return the full raw JSON so the user can inspect tool calls
+                # Model called tools instead of producing text —
+                # return full raw JSON so the caller can inspect tool calls
                 parsed.append(result["raw_response"])
             else:
                 parsed.append("")
@@ -96,8 +96,10 @@ def parse_documents(results):
     Extract content from Datalab OCR results.
 
     Handles all output formats automatically:
-    - json: Extracts and concatenates HTML from json.children[].html
-    - html/markdown/chunks: Returns the raw response content directly
+    - json:        Extracts and concatenates HTML from json.children[].html
+    - html:        Returns the raw HTML string directly
+    - markdown:    Returns the markdown string directly
+    - paginated:   Concatenates content across pages
     - page_schema: Returns the full structured JSON string
 
     Returns exactly ONE string per input document (1:1 mapping).
@@ -161,7 +163,6 @@ def parse_documents(results):
                 page_contents = []
                 for page in pages:
                     if isinstance(page, dict):
-                        # Try html, then markdown, then text
                         content = (
                             page.get("html")
                             or page.get("markdown")
@@ -176,13 +177,11 @@ def parse_documents(results):
                     continue
 
             # --- Strategy 5: page_schema structured extraction ---
-            # When page_schema is set, the response may contain
-            # structured data under various keys. Return the full JSON.
             if response_json.get("page_schema") or response_json.get("schema"):
                 parsed.append(raw)
                 continue
 
-            # Fallback: return the raw JSON string so nothing is lost
+            # Fallback: return raw JSON string so nothing is lost
             parsed.append(raw)
 
         except (json.JSONDecodeError, KeyError, TypeError):
