@@ -1,0 +1,29 @@
+# Compiled output
+/target/
+target/
+
+# Cargo lock for libraries
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+*.whl
+*.so
+*.pyd
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Maturin build
+*.d

@@ -1,0 +1,40 @@
+[package]
+name = "genai-coroutines"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "genai_coroutines"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+
+# Python bindings
+pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+bytes = "1.9"
+futures = "0.3"
+anyhow = "1.0"
+rand = "0.8"
+infer = "0.16"
+
+# Logging - bridges to Python's logging module via pyo3-log
+log = "0.4"
+pyo3-log = "0.9"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+

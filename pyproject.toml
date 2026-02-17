@@ -1,0 +1,43 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "genai-coroutines"
+version = "1.0.0"
+description = "High-performance async batch processing for Datalab Marker API (OCR) and OpenAI Responses API"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+keywords = ["rust", "async", "ocr", "llm", "batch-processing", "datalab", "openai"]
+authors = [
+    { name = "Soham Jagtap" }
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://192.168.1.152/soham.jagtap/Genai-Coroutines"
+Documentation = "https://192.168.1.152/soham.jagtap/Genai-Coroutines#readme"
+Repository = "https://192.168.1.152/soham.jagtap/Genai-Coroutines"
+
+[tool.maturin]
+python-source = "."
+module-name = "genai_coroutines.genai_coroutines"
+features = ["pyo3/extension-module"]
+
+[tool.uv.workspace]
+members = [
+    "test",
+]
