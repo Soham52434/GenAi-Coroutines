@@ -17,6 +17,9 @@ fn genai_coroutines(py: Python, m: &PyModule) -> PyResult<()> {
     //   logging.getLogger("genai_coroutines.ocr").setLevel(logging.DEBUG)
     //   logging.getLogger("genai_coroutines.responses").setLevel(logging.WARNING)
     pyo3_log::init();
+    
+    // Initialize the Tokio runtime for async support
+    pyo3_asyncio::tokio::init_multi_thread_once();
 
     // Create ocr submodule
     let ocr_module = PyModule::new(py, "ocr")?;
