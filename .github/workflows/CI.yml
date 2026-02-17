@@ -17,6 +17,7 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
     steps:
@@ -46,6 +47,8 @@ jobs:
       matrix:
         target: [x64, x86]
     steps:
+      - name: Install NASM
+        run: choco install nasm
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -69,6 +72,8 @@ jobs:
       matrix:
         target: [x86_64, aarch64]
     steps:
+      - name: Install NASM
+        run: brew install nasm
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
