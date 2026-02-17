@@ -28,13 +28,13 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://192.168.1.152/soham.jagtap/Genai-Coroutines"
-Documentation = "https://192.168.1.152/soham.jagtap/Genai-Coroutines#readme"
-Repository = "https://192.168.1.152/soham.jagtap/Genai-Coroutines"
+Homepage = "https://github.com/Soham52434/GenAi-Coroutines"
+Documentation = "https://github.com/Soham52434/GenAi-Coroutines#readme"
+Repository = "https://github.com/Soham52434/GenAi-Coroutines"
 
 [tool.maturin]
 python-source = "."
-module-name = "genai_coroutines.genai_coroutines"
+module-name = "genai_coroutines"
 features = ["pyo3/extension-module"]
 
 [tool.uv.workspace]

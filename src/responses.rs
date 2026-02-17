@@ -485,7 +485,7 @@ impl PyResponsesRequest {
         system_prompt: String,
         user_prompts: Vec<String>,
         model: String,
-        response_format: &PyAny,
+        response_format: &Bound<'_, PyAny>,
         timeout_secs: u64,
         temperature: Option<f64>,
         top_p: Option<f64>,
@@ -493,12 +493,12 @@ impl PyResponsesRequest {
         store: Option<bool>,
         reasoning_effort: Option<String>,
         reasoning_summary: Option<String>,
-        tools: Option<&PyAny>,
-        tool_choice: Option<&PyAny>,
+        tools: Option<&Bound<'_, PyAny>>,
+        tool_choice: Option<&Bound<'_, PyAny>>,
         previous_response_id: Option<String>,
         include: Option<Vec<String>>,
         truncation: Option<String>,
-        metadata: Option<&PyAny>,
+        metadata: Option<&Bound<'_, PyAny>>,
         parallel_tool_calls: Option<bool>,
         service_tier: Option<String>,
         stream: Option<bool>,
@@ -585,19 +585,19 @@ impl PyResponsesProcessor {
     #[new]
     fn new() -> Self { Self }
 
-    fn process_batch<'py>(&self, py: Python<'py>, request: PyResponsesRequest) -> PyResult<&'py PyAny> {
+    fn process_batch<'py>(&self, py: Python<'py>, request: PyResponsesRequest) -> PyResult<Bound<'py, PyAny>> {
         let req = request.inner.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let result = openai_chat_batch(req).await;
             Python::with_gil(|py| -> PyResult<PyObject> {
                 match result {
                     Ok(resp) => {
-                        let dict = PyDict::new(py);
+                        let dict = PyDict::new_bound(py);
                         dict.set_item("total_success", resp.total_success)?;
                         dict.set_item("total_errors", resp.total_errors)?;
-                        let py_results = PyList::empty(py);
+                        let py_results = PyList::empty_bound(py);
                         for item in resp.results {
-                            let d = PyDict::new(py);
+                            let d = PyDict::new_bound(py);
                             match item {
                                 BatchItemResult::Success { output, usage } => {
                                     d.set_item("success", true)?;
@@ -637,18 +637,18 @@ impl PyResponsesProcessor {
 // HELPERS: Python <-> JSON
 // ============================================================================
 
-fn py_to_json(obj: &PyAny, name: &str) -> PyResult<Value> {
-    let s: String = obj.py().import("json")?.call_method1("dumps", (obj,))?.extract()?;
+fn py_to_json(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<Value> {
+    let s: String = obj.py().import_bound("json")?.call_method1("dumps", (obj,))?.extract()?;
     serde_json::from_str(&s).map_err(|e| PyValueError::new_err(format!("Invalid {} JSON: {}", name, e)))
 }
 
-fn py_opt_to_json(obj: Option<&PyAny>, name: &str) -> PyResult<Option<Value>> {
+fn py_opt_to_json(obj: Option<&Bound<'_, PyAny>>, name: &str) -> PyResult<Option<Value>> {
     match obj { Some(o) => Ok(Some(py_to_json(o, name)?)), None => Ok(None) }
 }
 
 fn json_to_py(py: Python, v: &Value) -> PyResult<PyObject> {
     let s = serde_json::to_string(v).map_err(|e| PyValueError::new_err(format!("{}", e)))?;
-    Ok(py.import("json")?.call_method1("loads", (s,))?.to_object(py))
+    Ok(py.import_bound("json")?.call_method1("loads", (s,))?.to_object(py))
 }
 
 fn json_opt_to_py(py: Python, v: &Option<Value>) -> PyResult<Option<PyObject>> {
