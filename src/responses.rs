@@ -1,7 +1,7 @@
 use log::{debug, error, info, warn};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyDict, PyList};
+use pyo3::types::{PyDict, PyList};
 use rand::Rng;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
