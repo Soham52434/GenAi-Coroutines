@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 tokio = { version = "1.35", features = ["rt-multi-thread", "macros"] }
 
 # HTTP client
-reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "native-tls-vendored"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 
 # Python bindings
 pyo3 = { version = "0.23", features = ["extension-module", "abi3-py39"] }
