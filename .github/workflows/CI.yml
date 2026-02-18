@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up QEMU
-        if: runner.os == 'Linux'
+        if: matrix.target == 'aarch64'
         uses: docker/setup-qemu-action@v3
       - uses: actions/setup-python@v5
         with:
@@ -32,7 +32,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist -i python3.12
           sccache: 'true'
           manylinux: auto
       - name: Upload wheels
@@ -43,27 +43,21 @@ jobs:
 
   windows:
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [x64]
-        python: ['3.9', '3.10', '3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
-          architecture: ${{ matrix.target }}
+          python-version: '3.12'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          target: x64
+          args: --release --out dist -i python3.12
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-windows-${{ matrix.target }}-${{ matrix.python }}
+          name: wheels-windows-x64
           path: dist
 
   macos:
@@ -72,22 +66,21 @@ jobs:
       fail-fast: false
       matrix:
         target: [x86_64, aarch64]
-        python: ['3.9', '3.10', '3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: '3.12'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
+          args: --release --out dist -i python3.12
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.target }}-${{ matrix.python }}
+          name: wheels-macos-${{ matrix.target }}
           path: dist
 
   sdist:
