@@ -34,7 +34,7 @@ Repository = "https://github.com/Soham52434/GenAi-Coroutines"
 
 [tool.maturin]
 python-source = "."
-module-name = "genai_coroutines"
+module-name = "genai_coroutines._internal"
 features = ["pyo3/extension-module"]
 
 [tool.uv.workspace]

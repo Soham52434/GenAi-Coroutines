@@ -3,10 +3,9 @@ genai_coroutines - High-performance async batch processing for GenAI APIs
 """
 import json
 
-# The Rust extension IS the genai_coroutines module (module-name = "genai_coroutines").
-# Submodules are registered in sys.modules by lib.rs at import time,
-# so we can import them directly — no double-nesting needed.
-from genai_coroutines import ocr, responses
+# The Rust extension is compiled as genai_coroutines._internal (module-name = "genai_coroutines._internal").
+# Submodules are registered in sys.modules by lib.rs at import time.
+from genai_coroutines._internal import ocr, responses
 
 # Re-export classes for convenience
 DocumentConfig = ocr.DocumentConfig

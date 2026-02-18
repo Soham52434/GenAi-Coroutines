@@ -4,7 +4,7 @@ pub mod responses;
 use pyo3::prelude::*;
 
 #[pymodule]
-fn genai_coroutines(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Initialize pyo3-log bridge: forwards all Rust `log` records
     // into Python's `logging` module under logger "genai_coroutines".
     //
@@ -29,10 +29,10 @@ fn genai_coroutines(m: &Bound<'_, PyModule>) -> PyResult<()> {
     ocr_module.add("__version__", "1.0.0")?;
     m.add_submodule(&ocr_module)?;
 
-    // Register in sys.modules so `from genai_coroutines.ocr import ...` works
+    // Register in sys.modules so `from genai_coroutines._internal.ocr import ...` works
     py.import_bound("sys")?
         .getattr("modules")?
-        .set_item("genai_coroutines.ocr", &ocr_module)?;
+        .set_item("genai_coroutines._internal.ocr", &ocr_module)?;
 
     // ── Responses submodule ────────────────────────────────────────────────
     let responses_module = PyModule::new_bound(py, "responses")?;
@@ -41,10 +41,10 @@ fn genai_coroutines(m: &Bound<'_, PyModule>) -> PyResult<()> {
     responses_module.add("__version__", "1.0.0")?;
     m.add_submodule(&responses_module)?;
 
-    // Register in sys.modules so `from genai_coroutines.responses import ...` works
+    // Register in sys.modules so `from genai_coroutines._internal.responses import ...` works
     py.import_bound("sys")?
         .getattr("modules")?
-        .set_item("genai_coroutines.responses", &responses_module)?;
+        .set_item("genai_coroutines._internal.responses", &responses_module)?;
 
     m.add("__version__", "1.0.0")?;
     Ok(())
