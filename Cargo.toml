@@ -12,11 +12,11 @@ crate-type = ["cdylib"]
 tokio = { version = "1.35", features = ["rt-multi-thread", "macros"] }
 
 # HTTP client
-reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "native-tls"] }
 
 # Python bindings
-pyo3 = { version = "0.21", features = ["extension-module"] }
-pyo3-async-runtimes = { version = "0.21", features = ["tokio-runtime"] }
+pyo3 = { version = "0.23", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.23", features = ["tokio-runtime"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -30,7 +30,7 @@ infer = "0.16"
 
 # Logging - bridges to Python's logging module via pyo3-log
 log = "0.4"
-pyo3-log = "0.10"
+pyo3-log = "0.12"
 
 [profile.release]
 opt-level = 3

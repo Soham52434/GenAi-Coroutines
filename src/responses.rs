@@ -705,12 +705,12 @@ impl PyResponsesProcessor {
             Python::with_gil(|py| -> PyResult<PyObject> {
                 match result {
                     Ok(resp) => {
-                        let dict = PyDict::new_bound(py);
+                        let dict = PyDict::new(py);
                         dict.set_item("total_success", resp.total_success)?;
                         dict.set_item("total_errors", resp.total_errors)?;
-                        let py_results = PyList::empty_bound(py);
+                        let py_results = PyList::empty(py);
                         for item in resp.results {
-                            let d = PyDict::new_bound(py);
+                            let d = PyDict::new(py);
                             match item {
                                 BatchItemResult::Success { output, usage } => {
                                     d.set_item("success", true)?;
@@ -766,7 +766,7 @@ impl PyResponsesProcessor {
 fn py_to_json(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<Value> {
     let s: String = obj
         .py()
-        .import_bound("json")?
+        .import("json")?
         .call_method1("dumps", (obj,))?
         .extract()?;
     serde_json::from_str(&s)
@@ -784,9 +784,9 @@ fn json_to_py(py: Python, v: &Value) -> PyResult<PyObject> {
     let s = serde_json::to_string(v)
         .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
     Ok(py
-        .import_bound("json")?
+        .import("json")?
         .call_method1("loads", (s,))?
-        .to_object(py))
+        .unbind())
 }
 
 fn json_opt_to_py(py: Python, v: &Option<Value>) -> PyResult<Option<PyObject>> {

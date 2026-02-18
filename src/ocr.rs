@@ -673,10 +673,10 @@ impl PyDocumentProcessor {
             let results = processor.process_multipart_batch(rust_multiparts).await;
 
             Python::with_gil(|py| -> PyResult<PyObject> {
-                let py_results = PyList::empty_bound(py);
+                let py_results = PyList::empty(py);
 
                 for result in results {
-                    let dict = PyDict::new_bound(py);
+                    let dict = PyDict::new(py);
                     dict.set_item("index", result.index)?;
                     dict.set_item("success", result.success)?;
                     dict.set_item("processing_time_secs", result.processing_time_secs)?;
@@ -725,5 +725,5 @@ impl PyDocumentProcessor {
 fn json_value_to_py(py: Python, v: &serde_json::Value) -> PyResult<PyObject> {
     let s = serde_json::to_string(v)
         .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
-    Ok(py.import_bound("json")?.call_method1("loads", (s,))?.to_object(py))
+    Ok(py.import("json")?.call_method1("loads", (s,))?.unbind())
 }

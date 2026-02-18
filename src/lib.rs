@@ -23,26 +23,26 @@ fn _internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
 
     // ── OCR submodule ──────────────────────────────────────────────────────
-    let ocr_module = PyModule::new_bound(py, "ocr")?;
+    let ocr_module = PyModule::new(py, "ocr")?;
     ocr_module.add_class::<ocr::PyDocumentConfig>()?;
     ocr_module.add_class::<ocr::PyDocumentProcessor>()?;
     ocr_module.add("__version__", "1.0.0")?;
     m.add_submodule(&ocr_module)?;
 
     // Register in sys.modules so `from genai_coroutines._internal.ocr import ...` works
-    py.import_bound("sys")?
+    py.import("sys")?
         .getattr("modules")?
         .set_item("genai_coroutines._internal.ocr", &ocr_module)?;
 
     // ── Responses submodule ────────────────────────────────────────────────
-    let responses_module = PyModule::new_bound(py, "responses")?;
+    let responses_module = PyModule::new(py, "responses")?;
     responses_module.add_class::<responses::PyResponsesRequest>()?;
     responses_module.add_class::<responses::PyResponsesProcessor>()?;
     responses_module.add("__version__", "1.0.0")?;
     m.add_submodule(&responses_module)?;
 
     // Register in sys.modules so `from genai_coroutines._internal.responses import ...` works
-    py.import_bound("sys")?
+    py.import("sys")?
         .getattr("modules")?
         .set_item("genai_coroutines._internal.responses", &responses_module)?;
 
